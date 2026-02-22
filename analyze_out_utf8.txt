@@ -1,0 +1,26 @@
+
+============================================================
+  ANALISI ARCHITETTURA RETE NEAT (PER CMA-ES)
+============================================================
+Input: 140 nodi
+Output: 85 nodi
+Nodi Nascosti (Hidden): 1 nodi
+Connessioni Attive: 489 (su 11903 totali)
+
+Funzioni di Attivazione usate nei nodi (nascosti + output):
+  - tanh: 29 nodi
+  - sigmoid: 29 nodi
+  - relu: 28 nodi
+
+--- Suggerimento per CMA-ES ---
+Poiché NEAT evolve topologie arbitrarie (es. connessioni dirette Input->Output, nodi non stratificati),
+è difficile tradurla in una classica rete Dense a layer perfetti rigorosi.
+Tuttavia, puoi replicarne approssimativamente la *capacità* in CMA-ES creando una rete Dense così:
+Input Layer    : 140 neuroni
+Hidden Layer 1 : 1 neuroni
+Output Layer   : 85 neuroni
+
+Esempio di topologia ('layer_sizes') da inserire per CMA-ES:
+[140, 1, 85]
+============================================================
+

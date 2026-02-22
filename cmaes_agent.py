@@ -32,7 +32,7 @@ def _evaluate_solution(args: tuple) -> float:
     rng = np.random.default_rng(seed)
     game = RiskGame(rng=rng)
 
-    agent = NeuralAgent(input_dim=input_dim, rng=rng)
+    agent = NeuralAgent(input_dim=input_dim, rng=rng, hidden_layers=[])
     agent.set_params(genome.astype(np.float32))
 
     total_score = 0.0
@@ -72,7 +72,7 @@ def evaluate_vs_random(genome: np.ndarray, input_dim: int,
     """Evaluate an agent against RandomAgents. Returns win rate."""
     rng = np.random.default_rng()
     game = RiskGame(rng=rng)
-    agent = NeuralAgent(input_dim=input_dim, rng=rng)
+    agent = NeuralAgent(input_dim=input_dim, rng=rng, hidden_layers=[])
     agent.set_params(genome.astype(np.float32))
 
     wins = 0
@@ -113,8 +113,8 @@ def run_cmaes(
     """
     n_workers = max(1, cpu_count() - 1)
 
-    # Create template to get parameter count
-    template = NeuralAgent(input_dim=input_dim)
+    # Create template to get parameter count (using no hidden layers for fewer parameters)
+    template = NeuralAgent(input_dim=input_dim, hidden_layers=[])
     n_params = template.param_count()
 
     # Initial mean: small random values
@@ -259,7 +259,7 @@ def load_cmaes_agent(path: str = "cmaes_best.pkl") -> NeuralAgent:
     """Load a CMA-ES trained agent from file."""
     with open(path, "rb") as f:
         data = pickle.load(f)
-    agent = NeuralAgent(input_dim=data["input_dim"])
+    agent = NeuralAgent(input_dim=data["input_dim"], hidden_layers=[])
     agent.set_params(data["genome"])
     print(f"CMA-ES agente caricato: gen {data['generation']}, "
           f"fitness {data['fitness']:.4f}")

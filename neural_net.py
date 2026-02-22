@@ -85,13 +85,17 @@ class NeuralAgent:
     OUTPUT_DIM = 87   # 42 (reinforce) + 42 (attack src) + 1 (stop) + 1 (fortify stop) + 1 (spare)
     # Actually we use the same network for all phases with different output interpretations
 
-    def __init__(self, input_dim: int = 144, rng: np.random.Generator = None):
+    def __init__(self, input_dim: int = 144, rng: np.random.Generator = None, hidden_layers: list[int] = None):
         self.input_dim = input_dim
         self.rng = rng or np.random.default_rng()
         # Single network with large enough output for all decision types
         # Output: 42 + 42 + 1 = 85 (territory scores + attack/fortify targets + stop signal)
         self.output_dim = 42 + 42 + 1  # 85
-        self.network = NeuralNetwork([input_dim, 128, 64, self.output_dim])
+        
+        if hidden_layers is None:
+            hidden_layers = [128, 64] # Default architecture
+            
+        self.network = NeuralNetwork([input_dim] + hidden_layers + [self.output_dim])
 
     def get_params(self) -> np.ndarray:
         return self.network.get_params()

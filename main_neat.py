@@ -42,8 +42,55 @@ def main():
     print(f"\nTempo totale: {minutes}m {seconds}s")
     print(f"Topologia finale: {len(winner.nodes)} nodi, {len(winner.connections)} connessioni")
 
+    # --- Print details for CMA-ES translation ---
+    analyze_and_print_architecture(winner, config)
+
     print("\nPartita dimostrativa...")
     demo_game()
+
+
+def analyze_and_print_architecture(genome, config):
+    print("\n" + "=" * 60)
+    print("  ANALISI ARCHITETTURA RETE NEAT (PER CMA-ES)")
+    print("=" * 60)
+    
+    # Extract keys
+    input_keys = config.genome_config.input_keys
+    output_keys = config.genome_config.output_keys
+    
+    # Identify hidden nodes
+    hidden_nodes = [k for k in genome.nodes.keys() if k not in output_keys]
+    
+    print(f"Input: {len(input_keys)} nodi")
+    print(f"Output: {len(output_keys)} nodi")
+    print(f"Nodi Nascosti (Hidden): {len(hidden_nodes)} nodi")
+    
+    enabled_connections = [cg for cg in genome.connections.values() if cg.enabled]
+    print(f"Connessioni Attive: {len(enabled_connections)} (su {len(genome.connections)} totali)")
+    
+    activations = {}
+    for n in genome.nodes.values():
+        act = n.activation
+        activations[act] = activations.get(act, 0) + 1
+    
+    print("\nFunzioni di Attivazione usate nei nodi (nascosti + output):")
+    for act, count in activations.items():
+        print(f"  - {act}: {count} nodi")
+        
+    print("\n--- Suggerimento per CMA-ES ---")
+    print("Poiché NEAT evolve topologie arbitrarie (es. connessioni dirette Input->Output, nodi non stratificati),")
+    print("è difficile tradurla in una classica rete Dense a layer perfetti rigorosi.")
+    print("Tuttavia, puoi replicarne approssimativamente la *capacità* in CMA-ES creando una rete Dense così:")
+    print(f"Input Layer    : {len(input_keys)} neuroni")
+    if len(hidden_nodes) > 0:
+        print(f"Hidden Layer 1 : {len(hidden_nodes)} neuroni")
+    print(f"Output Layer   : {len(output_keys)} neuroni")
+    print("\nEsempio di topologia ('layer_sizes') da inserire per CMA-ES:")
+    if len(hidden_nodes) > 0:
+        print(f"[{len(input_keys)}, {len(hidden_nodes)}, {len(output_keys)}]")
+    else:
+        print(f"[{len(input_keys)}, {len(output_keys)}]  (Nessun hidden layer, corrisponde a un modello lineare)")
+    print("=" * 60 + "\n")
 
 
 def demo_game(model_path: str = "neat_best.pkl"):
