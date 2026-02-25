@@ -18,7 +18,7 @@ def main():
     from neural_net import RandomAgent
 
     n_generations = 30
-    games_per_eval = 3
+    games_per_eval = 20
 
     if len(sys.argv) > 1:
         if sys.argv[1] == "demo":

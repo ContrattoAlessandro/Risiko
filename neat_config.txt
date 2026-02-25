@@ -4,7 +4,7 @@
 [NEAT]
 fitness_criterion     = max
 fitness_threshold     = 2.0
-pop_size              = 64
+pop_size              = 250
 reset_on_extinction   = True
 no_fitness_termination = True
 
@@ -63,7 +63,7 @@ enabled_rate_to_true_add     = 0.0
 enabled_rate_to_false_add    = 0.0
 
 feed_forward            = True
-initial_connection      = full_direct
+initial_connection      = full
 
 # Weight
 weight_init_mean        = 0.0

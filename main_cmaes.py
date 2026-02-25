@@ -19,8 +19,8 @@ def main():
     from game import NUM_PLAYERS, INPUT_DIM
     from neural_net import RandomAgent, NeuralAgent
 
-    n_generations = 50
-    games_per_eval = 8
+    n_generations = 200
+    games_per_eval = 20
 
     if len(sys.argv) > 1:
         if sys.argv[1] == "demo":
@@ -39,11 +39,15 @@ def main():
     input_dim = len(game.encode_state(state, 0))
     print(f"Dimensione input rete neurale: {input_dim}")
 
+    # Configurable hidden layers to reduce parameters (e.g. [16] instead of default [32])
+    hidden_layers = [16]
+    
     start_time = time.time()
     best_genome, history = run_cmaes(
         n_generations=n_generations,
         games_per_eval=games_per_eval,
         input_dim=input_dim,
+        hidden_layers=hidden_layers,
     )
 
     elapsed = time.time() - start_time
@@ -52,17 +56,17 @@ def main():
     print(f"\nTempo totale: {minutes}m {seconds}s")
 
     print("\nPartita dimostrativa...")
-    demo_game()
+    demo_game(hidden_layers=hidden_layers)
 
 
-def demo_game(model_path: str = "cmaes_best.pkl"):
+def demo_game(model_path: str = "cmaes_best.pkl", hidden_layers: list[int] = None):
     """Play a demo game with CMA-ES agent vs 3 random agents."""
     from game import RiskGame, NUM_PLAYERS
     from cmaes_agent import load_cmaes_agent
     from neural_net import RandomAgent
 
     try:
-        agent = load_cmaes_agent(model_path)
+        agent = load_cmaes_agent(model_path, hidden_layers=hidden_layers)
     except FileNotFoundError:
         print(f"File '{model_path}' non trovato.")
         return

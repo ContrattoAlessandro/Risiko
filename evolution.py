@@ -50,8 +50,8 @@ def _evaluate_individual(args: tuple) -> float:
 
     total_score = 0.0
     for g_idx in range(games_per_eval):
-        # Pick 3 opponents (cycling through available opponents)
-        opp_indices = [(g_idx * 3 + j) % len(opponent_genomes) for j in range(3)]
+        # Probabilistic tournament: select 3 random opponents
+        opp_indices = rng.choice(len(opponent_genomes), size=3, replace=False)
         player_slot = g_idx % NUM_PLAYERS
 
         agents = []
@@ -67,10 +67,9 @@ def _evaluate_individual(args: tuple) -> float:
 
         # Rich multi-component fitness
         score = 0.0
-        score += details["territory_frac"] * 0.30        # territory control
-        score += details["continent_progress"] * 0.20    # continent progress
-        score += details["army_ratio"] * 0.15             # army advantage
-        score += details["border_strength"] * 0.10        # border defense
+        score += details["territory_frac"] * 0.40        # territory control
+        score += details["continent_progress"] * 0.30    # continent progress
+        score += details["army_ratio"] * 0.20             # army advantage
 
         if winner == player_slot:
             score += 1.0                                  # win bonus
@@ -88,7 +87,7 @@ class NeuroEvolution:
 
     def __init__(
         self,
-        population_size: int = 48,
+        population_size: int = 128,
         games_per_eval: int = 3,
         tournament_size: int = 5,
         mutation_rate: float = 0.1,

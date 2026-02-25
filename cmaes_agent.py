@@ -28,32 +28,42 @@ def _evaluate_solution(args: tuple) -> float:
     Module-level function for multiprocessing compatibility.
     Returns NEGATIVE fitness (CMA-ES minimizes by default).
     """
-    genome, games_per_eval, input_dim, seed = args
+    genome, pool_genomes, games_per_eval, input_dim, hidden_layers, seed = args
     rng = np.random.default_rng(seed)
     game = RiskGame(rng=rng)
 
-    agent = NeuralAgent(input_dim=input_dim, rng=rng, hidden_layers=[])
+    agent = NeuralAgent(input_dim=input_dim, rng=rng, hidden_layers=hidden_layers)
     agent.set_params(genome.astype(np.float32))
+
+    # Pre-allocate opponent agents to avoid costly instantiations per game
+    opp_agents = [NeuralAgent(input_dim=input_dim, rng=rng, hidden_layers=hidden_layers) for _ in range(3)]
 
     total_score = 0.0
     for g in range(games_per_eval):
         slot = g % NUM_PLAYERS
+        
+        # Probabilistic tournament: select 3 random opponents from the current pool
+        opp_indices = rng.choice(len(pool_genomes), size=3, replace=False)
+
         agents = []
+        opp_idx = 0
         for s in range(NUM_PLAYERS):
             if s == slot:
                 agents.append(agent)
             else:
-                agents.append(RandomAgent(rng=rng))
+                opp_agent = opp_agents[opp_idx]
+                opp_agent.set_params(pool_genomes[opp_indices[opp_idx]].astype(np.float32))
+                agents.append(opp_agent)
+                opp_idx += 1
 
         winner, final_state = game.play_game(agents)
         details = compute_fitness_details(final_state, slot)
 
         # Rich multi-component fitness
         score = 0.0
-        score += details["territory_frac"] * 0.30
-        score += details["continent_progress"] * 0.20
-        score += details["army_ratio"] * 0.15
-        score += details["border_strength"] * 0.10
+        score += details["territory_frac"] * 0.40
+        score += details["continent_progress"] * 0.30
+        score += details["army_ratio"] * 0.20
 
         if winner == slot:
             score += 1.0
@@ -67,23 +77,28 @@ def _evaluate_solution(args: tuple) -> float:
     return -fitness  # CMA-ES minimizes, so negate
 
 
-def evaluate_vs_random(genome: np.ndarray, input_dim: int,
+def evaluate_vs_random(genome: np.ndarray, input_dim: int, hidden_layers: list[int] = None,
                        n_games: int = 20) -> float:
     """Evaluate an agent against RandomAgents. Returns win rate."""
     rng = np.random.default_rng()
     game = RiskGame(rng=rng)
-    agent = NeuralAgent(input_dim=input_dim, rng=rng, hidden_layers=[])
+    agent = NeuralAgent(input_dim=input_dim, rng=rng, hidden_layers=hidden_layers)
     agent.set_params(genome.astype(np.float32))
+
+    # Pre-allocate random agents to avoid overhead
+    rnd_agents = [RandomAgent(rng=rng) for _ in range(3)]
 
     wins = 0
     for _ in range(n_games):
         slot = int(rng.integers(0, NUM_PLAYERS))
         agents = []
+        rnd_idx = 0
         for s in range(NUM_PLAYERS):
             if s == slot:
                 agents.append(agent)
             else:
-                agents.append(RandomAgent(rng=rng))
+                agents.append(rnd_agents[rnd_idx])
+                rnd_idx += 1
         winner, _ = game.play_game(agents)
         if winner == slot:
             wins += 1
@@ -91,13 +106,14 @@ def evaluate_vs_random(genome: np.ndarray, input_dim: int,
 
 
 def run_cmaes(
-    n_generations: int = 50,
-    games_per_eval: int = 8,
+    n_generations: int = 200,
+    games_per_eval: int = 20,
     sigma0: float = 0.5,
     input_dim: int = INPUT_DIM,
+    hidden_layers: list[int] = None,
     save_path: str = "cmaes_best.pkl",
     log_path: str = "cmaes_log.pkl",
-    popsize: int = 0,  # 0 = let CMA-ES choose
+    popsize: int = 128,  # default set to 128 for better stability
 ):
     """
     Run CMA-ES evolution for Risiko.
@@ -113,8 +129,11 @@ def run_cmaes(
     """
     n_workers = max(1, cpu_count() - 1)
 
-    # Create template to get parameter count (using no hidden layers for fewer parameters)
-    template = NeuralAgent(input_dim=input_dim, hidden_layers=[])
+    if hidden_layers is None:
+        hidden_layers = [32]
+
+    # Create template to get parameter count
+    template = NeuralAgent(input_dim=input_dim, hidden_layers=hidden_layers)
     n_params = template.param_count()
 
     # Initial mean: small random values
@@ -157,12 +176,19 @@ def run_cmaes(
             # Ask CMA-ES for candidate solutions
             solutions = es.ask()
 
-            # Evaluate in parallel
-            eval_args = [
-                (sol, games_per_eval, input_dim,
-                 int(np.random.default_rng().integers(0, 2**31)))
-                for sol in solutions
-            ]
+            # Evaluate in parallel with reduced IPC overhead
+            eval_args = []
+            rng = np.random.default_rng()
+            for sol in solutions:
+                # Pass only a subset of solutions as opponents to reduce IPC payload
+                pool_size = min(15, len(solutions))
+                opp_indices = rng.choice(len(solutions), size=pool_size, replace=False)
+                opp_pool = [solutions[i] for i in opp_indices]
+                
+                eval_args.append((
+                    sol, opp_pool, games_per_eval, input_dim, hidden_layers,
+                    int(rng.integers(0, 2**31))
+                ))
 
             if pool is not None:
                 neg_fitnesses = pool.map(_evaluate_solution, eval_args)
@@ -206,12 +232,12 @@ def run_cmaes(
 
             # Periodic win-rate evaluation
             if (gen + 1) % 10 == 0 or gen == 0:
-                wr = evaluate_vs_random(best_genome_ever, input_dim, n_games=20)
+                wr = evaluate_vs_random(best_genome_ever, input_dim, hidden_layers, n_games=20)
                 print(f"        └─ Win rate vs Random: {wr:.0%}")
 
             # Periodic save
             if (gen + 1) % 10 == 0:
-                _save_agent(best_genome_ever, input_dim, best_fitness_ever,
+                _save_agent(best_genome_ever, input_dim, hidden_layers, best_fitness_ever,
                             gen, history, save_path)
                 _save_log(history, log_path)
 
@@ -223,7 +249,7 @@ def run_cmaes(
             pool.join()
 
     # Final save
-    _save_agent(best_genome_ever, input_dim, best_fitness_ever,
+    _save_agent(best_genome_ever, input_dim, hidden_layers, best_fitness_ever,
                 gen, history, save_path)
     _save_log(history, log_path)
 
@@ -232,16 +258,17 @@ def run_cmaes(
     print(f"  Agente salvato in '{save_path}'")
 
     # Final win rate
-    wr = evaluate_vs_random(best_genome_ever, input_dim, n_games=30)
+    wr = evaluate_vs_random(best_genome_ever, input_dim, hidden_layers, n_games=30)
     print(f"  Win rate finale vs Random: {wr:.0%}")
 
     return best_genome_ever, history
 
 
-def _save_agent(genome, input_dim, fitness, generation, history, path):
+def _save_agent(genome, input_dim, hidden_layers, fitness, generation, history, path):
     data = {
         "genome": genome.astype(np.float32),
         "input_dim": input_dim,
+        "hidden_layers": hidden_layers,
         "fitness": fitness,
         "generation": generation,
         "history": history,
@@ -255,11 +282,15 @@ def _save_log(history, path):
         pickle.dump(history, f)
 
 
-def load_cmaes_agent(path: str = "cmaes_best.pkl") -> NeuralAgent:
+def load_cmaes_agent(path: str = "cmaes_best.pkl", hidden_layers: list[int] = None) -> NeuralAgent:
     """Load a CMA-ES trained agent from file."""
     with open(path, "rb") as f:
         data = pickle.load(f)
-    agent = NeuralAgent(input_dim=data["input_dim"], hidden_layers=[])
+    
+    # Use saved config if available, otherwise fallback to parameter or default [32]
+    hl = data.get("hidden_layers", hidden_layers if hidden_layers is not None else [32])
+    agent = NeuralAgent(input_dim=data["input_dim"], hidden_layers=hl)
+    
     agent.set_params(data["genome"])
     print(f"CMA-ES agente caricato: gen {data['generation']}, "
           f"fitness {data['fitness']:.4f}")

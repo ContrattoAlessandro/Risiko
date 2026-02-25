@@ -13,7 +13,7 @@ import os
 import time as _time
 from multiprocessing import Pool, cpu_count
 from game import (RiskGame, GameState, NUM_TERRITORIES, NUM_PLAYERS,
-                  INPUT_DIM, MAX_TURNS, territory_count)
+                  INPUT_DIM, MAX_TURNS, territory_count, compute_fitness_details)
 from neural_net import RandomAgent
 
 
@@ -108,7 +108,7 @@ class NEATAgent:
 
 def _eval_genome_worker(args):
     """Evaluate a single NEAT genome. Module-level for pickling."""
-    genome_data, config_path, games_per_eval, seed = args
+    genome_data, pool_genomes, config_path, games_per_eval, seed = args
     rng = np.random.default_rng(seed)
 
     # Reconstruct config and genome in worker process
@@ -127,27 +127,42 @@ def _eval_genome_worker(args):
     total_score = 0.0
     for g in range(games_per_eval):
         slot = g % NUM_PLAYERS
+        
+        # Probabilistic tournament: select 3 random opponents from the pool
+        opp_indices = rng.choice(len(pool_genomes), size=3, replace=False)
+        opp_iter = iter(opp_indices)
+
         agents = []
         for s in range(NUM_PLAYERS):
             if s == slot:
                 agents.append(agent)
             else:
-                agents.append(RandomAgent(rng=rng))
+                opp_net = neat.nn.FeedForwardNetwork.create(pool_genomes[next(opp_iter)], config)
+                opp_agent = NEATAgent(opp_net, rng=rng)
+                agents.append(opp_agent)
 
         winner, final_state = game.play_game(agents)
-        territories = territory_count(final_state, slot)
+        details = compute_fitness_details(final_state, slot)
+
+        score = 0.0
+        score += details["territory_frac"] * 0.40
+        score += details["continent_progress"] * 0.30
+        score += details["army_ratio"] * 0.20
 
         if winner == slot:
-            total_score += 1.0 + territories / 42.0
-        else:
-            total_score += territories / 42.0 * 0.5
+            score += 1.0
+            score += (1.0 - final_state.turn / 150) * 0.25
+        elif details["territory_frac"] == 0:
+            score -= 0.2
+
+        total_score += score
 
     return total_score / games_per_eval
 
 
-def evaluate_genome(genome, config, games_per_eval=3, seed=None):
+def evaluate_genome(genome, pool_genomes, config, games_per_eval=20, seed=None):
     """
-    Evaluate a single NEAT genome by playing Risk games.
+    Evaluate a single NEAT genome by playing Risk games vs pool.
     Kept for compatibility / single-process fallback.
     """
     rng = np.random.default_rng(seed)
@@ -158,26 +173,41 @@ def evaluate_genome(genome, config, games_per_eval=3, seed=None):
     total_score = 0.0
     for g in range(games_per_eval):
         slot = g % NUM_PLAYERS
+        
+        # Probabilistic tournament: select 3 random opponents from the pool
+        opp_indices = rng.choice(len(pool_genomes), size=3, replace=False)
+        opp_iter = iter(opp_indices)
+
         agents = []
         for s in range(NUM_PLAYERS):
             if s == slot:
                 agents.append(agent)
             else:
-                agents.append(RandomAgent(rng=rng))
+                opp_net = neat.nn.FeedForwardNetwork.create(pool_genomes[next(opp_iter)], config)
+                opp_agent = NEATAgent(opp_net, rng=rng)
+                agents.append(opp_agent)
 
         winner, final_state = game.play_game(agents)
-        territories = territory_count(final_state, slot)
+        details = compute_fitness_details(final_state, slot)
+
+        score = 0.0
+        score += details["territory_frac"] * 0.40
+        score += details["continent_progress"] * 0.30
+        score += details["army_ratio"] * 0.20
 
         if winner == slot:
-            total_score += 1.0 + territories / 42.0
-        else:
-            total_score += territories / 42.0 * 0.5
+            score += 1.0
+            score += (1.0 - final_state.turn / 150) * 0.25
+        elif details["territory_frac"] == 0:
+            score -= 0.2
+
+        total_score += score
 
     return total_score / games_per_eval
 
 
-def run_neat(config_path: str = "neat_config.txt", n_generations: int = 30,
-             games_per_eval: int = 3, save_path: str = "neat_best.pkl"):
+def run_neat(config_path: str = "neat_config.txt", n_generations: int = 200,
+             games_per_eval: int = 15, save_path: str = "neat_best.pkl"):
     """
     Run NEAT evolution for Risiko with parallel genome evaluation.
     """
@@ -205,9 +235,12 @@ def run_neat(config_path: str = "neat_config.txt", n_generations: int = 30,
         nonlocal best_win_rate
         t0 = _time.time()
 
+        # Collect all genomes
+        all_genomes = [g for _, g in genomes]
+
         # Parallel evaluation
         args = [
-            (genome, config_path, games_per_eval,
+            (genome, all_genomes, config_path, games_per_eval,
              int(np.random.default_rng().integers(0, 2**31)))
             for _, genome in genomes
         ]

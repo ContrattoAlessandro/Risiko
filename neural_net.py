@@ -200,7 +200,7 @@ class NeuralAgent:
             frm, to = best_fort
             # How many armies to move: use sigmoid on score to get 0-1 ratio
             move_ratio = float(sigmoid(np.array([best_score]))[0])
-            return (frm, to, max(1, int(move_ratio * 10)))  # up to ~10 armies
+            return (frm, to, max(1, int(move_ratio * 50)))  # up to ~50 armies
         return None
 
 
@@ -218,6 +218,8 @@ class RandomAgent:
         for _ in range(n_armies):
             idx = self.rng.integers(0, len(owned_territories))
             distribution[idx] += 1
+        # Strict: total must equal n_armies (this loop guarantees it)
+        assert int(np.sum(distribution)) == n_armies
         return distribution
 
     def attack(self, state_encoded: np.ndarray,
@@ -233,4 +235,5 @@ class RandomAgent:
             return None
         idx = self.rng.integers(0, len(valid_fortifications))
         frm, to = valid_fortifications[idx]
+        # Clamp to valid range: 1 to (source armies - 1), will be validated by engine
         return (frm, to, max(1, self.rng.integers(1, 4)))
